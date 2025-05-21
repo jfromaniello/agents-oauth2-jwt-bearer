@@ -69,10 +69,6 @@ export const WithAuth = <Env, TBase extends Constructor<Server<Env>>>(
   const authRequired = options.authRequired ?? true;
   const debug = options.debug ?? (() => {});
 
-  //This kind of work like an an static member for the mixin class.
-  //Can't access the static members of an anonymous class from a non-static method.
-  const staticAsyncTokenStorage = new AsyncLocalStorage<TokenSet>();
-
   return class extends Base {
     #tokenSetPerConnection = new WeakMap<Connection, TokenSet>();
     #userPerToken = new Map<string, UserInfo | undefined>();
@@ -92,16 +88,6 @@ export const WithAuth = <Env, TBase extends Constructor<Server<Env>>>(
      */
     getCredentials(): TokenSet | undefined {
       return this.#asyncTokenStorage.getStore();
-    }
-
-    /**
-     * Get the credentials for the current async context
-     * across all instances of the agent.
-     *
-     * @returns - The credentials for the current request or connection.
-     */
-    static getCredentials() {
-      return staticAsyncTokenStorage.getStore();
     }
 
     /**
@@ -253,11 +239,9 @@ export const WithAuth = <Env, TBase extends Constructor<Server<Env>>>(
     async onRequest(req: Request) {
       try {
         const tokenSet = await this.#validateTokenFromRequest(req);
-        return staticAsyncTokenStorage.run(tokenSet, async () => {
-          return this.#asyncTokenStorage.run(tokenSet, async () => {
-            const authResponse = await this.onAuthenticatedRequest(req);
-            return authResponse ?? super.onRequest(req);
-          });
+        return this.#asyncTokenStorage.run(tokenSet, async () => {
+          const authResponse = await this.onAuthenticatedRequest(req);
+          return authResponse ?? super.onRequest(req);
         });
       } catch (err) {
         debug(err instanceof Error ? err.message : "Unknown error", {
@@ -282,13 +266,11 @@ export const WithAuth = <Env, TBase extends Constructor<Server<Env>>>(
       try {
         const tokenSet = await this.#validateTokenFromRequest(ctx.request);
         this.#tokenSetPerConnection.set(connection, tokenSet);
-        return staticAsyncTokenStorage.run(tokenSet, async () => {
-          return this.#asyncTokenStorage.run(tokenSet, async () => {
-            await this.onAuthenticatedConnect(connection, ctx);
-            if (connection.readyState === connection.OPEN) {
-              await super.onConnect(connection, ctx);
-            }
-          });
+        return this.#asyncTokenStorage.run(tokenSet, async () => {
+          await this.onAuthenticatedConnect(connection, ctx);
+          if (connection.readyState === connection.OPEN) {
+            await super.onConnect(connection, ctx);
+          }
         });
       } catch (err) {
         debug(err instanceof Error ? err.message : "Unknown error", {
@@ -321,10 +303,8 @@ export const WithAuth = <Env, TBase extends Constructor<Server<Env>>>(
         return super.onMessage(connection, message);
       }
 
-      return staticAsyncTokenStorage.run(credentials, () => {
-        return this.#asyncTokenStorage.run(credentials, () => {
-          return super.onMessage(connection, message);
-        });
+      return this.#asyncTokenStorage.run(credentials, () => {
+        return super.onMessage(connection, message);
       });
     }
 
