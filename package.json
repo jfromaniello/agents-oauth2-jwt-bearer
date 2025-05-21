@@ -42,6 +42,6 @@
     "jose": "^6.0.10"
   },
   "peerDependencies": {
-    "partyserver": "^0.0.67 || ^0.0.68"
+    "partyserver": ">=0.0.67 <0.0.72"
   }
 }
