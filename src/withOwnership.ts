@@ -88,7 +88,7 @@ export const WithOwnership = <
       if (!(await this.#isCurrentUserOwner())) {
         return new Response("This chat is not yours.", { status: 403 });
       }
-      this.onAuthorizedRequest(request);
+      return await this.onAuthorizedRequest(request);
     }
 
     #getDurableStorage() {
