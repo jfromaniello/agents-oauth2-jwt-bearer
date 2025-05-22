@@ -1,6 +1,6 @@
 {
   "name": "agents-oauth2-jwt-bearer",
-  "version": "3.1.0",
+  "version": "3.1.1",
   "description": "A PartyServer mixin for adding OAuth 2.0 JWT Bearer Token authentication to your PartyServer applications.",
   "license": "MIT",
   "author": "José R. Romaniello (https://x.com/jfroma)",
