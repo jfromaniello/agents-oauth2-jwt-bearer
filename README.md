@@ -193,6 +193,103 @@ The mixin accepts tokens in the following formats:
 1. Authorization header: `Authorization: Bearer <token>`
 2. Query parameter: `?access_token=<token>`
 
+## Advanced Usage: WithOwnership Mixin
+
+### Overview
+
+The `WithOwnership` mixin adds ownership capabilities to a PartyServer that already has authentication provided by the `WithAuth` mixin. This is particularly useful for scenarios where you need to restrict access to resources based on ownership, such as private chats or user-specific data.
+
+### Key Features
+
+- Owner-based access control for connections and requests
+- Integration with Durable Objects for persistent ownership data
+- Automatic rejection of non-owner access attempts
+
+### Usage Example
+
+```typescript
+// Then add ownership with WithOwnership
+class MyServer extends WithOwnership(WithAuth(Server<MyEnv>), {
+  // Optional: provide a debug function
+  debug: (message, ctx) => console.log(message, ctx),
+}) {
+  // Your server implementation
+
+  // Optionally override authorization methods
+  async onAuthorizedConnect(connection, ctx) {
+    console.log("Owner connected:", this.getClaims()?.sub);
+    // Handle authorized connection
+  }
+
+  async onAuthorizedRequest(req) {
+    console.log("Owner made a request:", this.getClaims()?.sub);
+    // Handle authorized request
+  }
+}
+```
+
+### Ownership Methods
+
+#### `setOwner(owner: string, overwrite: boolean = false): Promise<void>`
+
+Sets the owner of the object. By default, it will throw an error if the owner is already set to a different user unless `overwrite` is set to `true`.
+
+**Parameters:**
+
+- `owner`: The user ID (sub from JWT claims) to set as the owner
+- `overwrite`: Optional boolean to allow overwriting an existing owner
+
+**Example:**
+
+```typescript
+// When initializing a new chat or resource
+async onCreate() {
+  const claims = this.getClaims();
+  if (claims?.sub) {
+    await this.setOwner(claims.sub);
+  }
+}
+```
+
+#### `getOwner(): Promise<string | undefined>`
+
+Gets the current owner of the object.
+
+**Returns:**
+
+- The user ID (sub) of the owner, or undefined if no owner is set
+
+**Example:**
+
+```typescript
+async checkOwnership() {
+  const owner = await this.getOwner();
+  console.log(`This resource is owned by: ${owner}`);
+}
+```
+
+### Authorization Flow
+
+1. When a client makes a request or connection:
+
+   - First, the authentication checks are performed by the `WithAuth` mixin
+   - Then, the ownership check verifies if the authenticated user is the owner
+
+2. If the ownership check succeeds:
+
+   - The `onAuthorizedConnect` or `onAuthorizedRequest` method is called
+   - The connection or request is allowed to proceed
+
+3. If the ownership check fails:
+   - For WebSocket connections: Connection is closed with code 1008 and message "This chat is not yours."
+   - For HTTP requests: A 403 Forbidden response is returned with message "This chat is not yours."
+
+### DurableObject Integration
+
+The `WithOwnership` mixin is designed to work with Cloudflare DurableObjects for storing ownership data. The mixin uses the DurableObject's storage API to persist ownership information.
+
+**Note:** If you're not using DurableObjects, you'll need to override the `setOwner` and `getOwner` methods to implement your own storage mechanism.
+
 ## References
 
 - This project is similar to other Auth0 middlewares like [node-oauth2-jwt-bearer](https://github.com/auth0/node-oauth2-jwt-bearer).
