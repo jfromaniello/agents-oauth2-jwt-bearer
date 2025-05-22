@@ -117,3 +117,26 @@ export type WithAuthParams = {
    */
   debug?: (message: string, content?: Record<string, unknown>) => void;
 };
+
+/**
+ * Interface for an authenticated server with methods to handle authentication
+ */
+export interface AuthorizedServer extends AuthenticatedServer {
+  /**
+   * Method called after the request has been authenticated
+   * and the user is authorized to connect to the server.
+   *
+   * @param connection The connection that was authenticated.
+   * @param ctx The connection context.
+   */
+  onAuthorizedConnect(connection: any, ctx: any): Promise<void>;
+
+  /**
+   * Method called after the request has been authenticated
+   * and the user is authorized.
+   *
+   * @param req The request that was authenticated.
+   * @returns Either undefined or a response.
+   */
+  onAuthorizedRequest(req: Request): Promise<void | Response>;
+}

@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Connection, Server } from "partyserver";
-import { AuthenticatedServer, Constructor } from "./types.js";
+import { AuthenticatedServer, AuthorizedServer, Constructor } from "./types.js";
 
 interface DurableObjectState {
   readonly storage: {
@@ -36,8 +36,24 @@ export const WithOwnership = <
   TBase extends Constructor<withOwnershipClassAllowed<Env>>,
 >(
   Base: TBase,
+  options: { debug?: (message: string, ctx: any) => void } = {},
 ) => {
-  return class WithOwnership extends Base {
+  const debug = options.debug ?? (() => {});
+
+  return class WithOwnership extends Base implements AuthorizedServer {
+    async onAuthorizedConnect(connection: any, ctx: any): Promise<void> {
+      debug("Authenticated connection", {
+        connection,
+        ctx,
+      });
+    }
+
+    async onAuthorizedRequest(req: Request): Promise<void | Response> {
+      debug("Authenticated request", {
+        req,
+      });
+    }
+
     /**
      * Checks if the current user in the connection or request
      * is the actual owner of the chat.
@@ -62,7 +78,9 @@ export const WithOwnership = <
       await super.onAuthenticatedConnect(connection, ctx);
       if (!(await this.#isCurrentUserOwner())) {
         connection.close(1008, "This chat is not yours.");
+        return;
       }
+      this.onAuthorizedConnect(connection, ctx);
     }
 
     async onAuthenticatedRequest(request: Request): Promise<void | Response> {
@@ -70,6 +88,7 @@ export const WithOwnership = <
       if (!(await this.#isCurrentUserOwner())) {
         return new Response("This chat is not yours.", { status: 403 });
       }
+      this.onAuthorizedRequest(request);
     }
 
     #getDurableStorage() {
