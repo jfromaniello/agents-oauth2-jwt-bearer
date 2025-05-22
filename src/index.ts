@@ -9,46 +9,14 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { Connection, ConnectionContext, Server, WSMessage } from "partyserver";
 import { UnauthorizedError } from "./bearer/errors.js";
 import getToken from "./bearer/index.js";
-import { UserInfo } from "./types.js";
-
-type Constructor<T = object> = new (...args: any[]) => T;
-
-type TokenSet = {
-  access_token: string;
-  id_token?: string;
-  refresh_token?: string;
-  expires_at?: number;
-  scope?: string;
-  token_type?: string;
-};
-
-type DiscoveryDocument = {
-  userinfo_endpoint?: string;
-  jwks_uri?: string;
-};
-
-type WithAuthParams = {
-  /**
-   * The options to pass to the JWT verification.
-   */
-  verify?: JWTVerifyOptions;
-
-  /**
-   * Whether to require authentication for all requests.
-   * If set to false, unauthenticated requests will be allowed.
-   *
-   * Defaults to true.
-   */
-  authRequired?: boolean;
-
-  /**
-   * An optional logger function to log debug messages.
-   *
-   * @param message - The message to log.
-   * @param content - An optional object containing additional content to log.
-   */
-  debug?: (message: string, content?: Record<string, unknown>) => void;
-};
+import {
+  AuthenticatedServer,
+  Constructor,
+  DiscoveryDocument,
+  TokenSet,
+  UserInfo,
+  WithAuthParams,
+} from "./types.js";
 
 /**
  *
@@ -69,7 +37,7 @@ export const WithAuth = <Env, TBase extends Constructor<Server<Env>>>(
   const authRequired = options.authRequired ?? true;
   const debug = options.debug ?? (() => {});
 
-  return class extends Base {
+  return class extends Base implements AuthenticatedServer {
     #tokenSetPerConnection = new WeakMap<Connection, TokenSet>();
     #userPerToken = new Map<string, UserInfo | undefined>();
     #remoteJWKSet: ReturnType<typeof createRemoteJWKSet> | undefined;
@@ -358,3 +326,5 @@ export const WithAuth = <Env, TBase extends Constructor<Server<Env>>>(
     }
   };
 };
+
+export { WithOwnership } from "./withOwnership.js";
