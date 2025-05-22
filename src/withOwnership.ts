@@ -2,15 +2,23 @@
 import { Connection, Server } from "partyserver";
 import { AuthenticatedServer, Constructor } from "./types.js";
 
-type withOwnershipClassAllowed<Env> = Server<Env> &
-  AuthenticatedServer & {
-    ctx: {
-      storage: {
-        get<T = unknown>(key: string, options?: any): Promise<T | undefined>;
-        put<T>(key: string, value: T, options?: any): Promise<void>;
-      };
-    };
+interface DurableObjectState {
+  readonly storage: {
+    get<T = unknown>(key: string, options?: any): Promise<T | undefined>;
+    put<T>(key: string, value: T, options?: any): Promise<void>;
   };
+}
+
+const isDurableObjectState = (state: any): state is DurableObjectState => {
+  return (
+    state &&
+    typeof state.storage === "object" &&
+    typeof state.storage.get === "function" &&
+    typeof state.storage.put === "function"
+  );
+};
+
+type withOwnershipClassAllowed<Env> = Server<Env> & AuthenticatedServer;
 
 /**
  * Mixin to add ownership functionality to an Authenticated and DurableObject server.
@@ -40,8 +48,7 @@ export const WithOwnership = <
      */
     async #isCurrentUserOwner(): Promise<boolean> {
       const userInfo = this.getClaims();
-      const agentStorage = this.ctx.storage;
-      const objectOwner = await agentStorage.get("owner");
+      const objectOwner = await this.getOwner();
       if (objectOwner !== userInfo?.sub) {
         return false;
       }
@@ -65,6 +72,18 @@ export const WithOwnership = <
       }
     }
 
+    #getDurableStorage() {
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+      // @ts-expect-error
+      const ctx = this.ctx;
+      if (!isDurableObjectState(ctx)) {
+        throw new Error(
+          "WithOwnership used on a non-DurableObject context. Please overwrite setOwner and getOwner methods.",
+        );
+      }
+      return ctx.storage;
+    }
+
     async setOwner(owner: string, overwrite: boolean = false): Promise<void> {
       if (!owner) {
         throw new Error("Owner cannot be empty");
@@ -73,11 +92,11 @@ export const WithOwnership = <
       if (currentOwner && currentOwner !== owner && !overwrite) {
         throw new Error("The owner is already set to another user");
       }
-      await this.ctx.storage.put("owner", owner);
+      await this.#getDurableStorage().put("owner", owner);
     }
 
     async getOwner(): Promise<string | undefined> {
-      return this.ctx.storage.get("owner");
+      return this.#getDurableStorage().get("owner");
     }
   };
 };
