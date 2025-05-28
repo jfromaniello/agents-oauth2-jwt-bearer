@@ -327,4 +327,11 @@ export const WithAuth = <Env, TBase extends Constructor<Server<Env>>>(
   };
 };
 
-export { WithOwnership } from "./withOwnership.js";
+export { OwnedAgent, WithOwnership } from "./withOwnership.js";
+
+/**
+ * Alias for `WithAuth` to maintain backward compatibility.
+ * This mixin adds authentication functionality to a PartyServer server using
+ * JSON Web Token (JWT) Profile for OAuth 2.0 Access Tokens.
+ */
+export const AuthAgent = WithAuth;

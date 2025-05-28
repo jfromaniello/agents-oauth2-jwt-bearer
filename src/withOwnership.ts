@@ -119,3 +119,9 @@ export const WithOwnership = <
     }
   };
 };
+
+/**
+ * Alias for the WithOwnership mixin.
+ * This is used to provide a more descriptive name for the mixin.
+ */
+export const OwnedAgent = WithOwnership;
