@@ -36,10 +36,13 @@ export const WithAuth = <Env, TBase extends Constructor<Server<Env>>>(
 ) => {
   const authRequired = options.authRequired ?? true;
   const debug = options.debug ?? (() => {});
+  // I had to do this because:
+  // a- It seems miniflare keep recreating the server instance
+  // b- connections have same properties (like id) but are different instances.
+  const tokenSetPerConnection = new Map<string, TokenSet>();
+  const userPerToken = new Map<string, UserInfo | undefined>();
 
   return class extends Base implements AuthenticatedServer {
-    #tokenSetPerConnection = new WeakMap<Connection, TokenSet>();
-    #userPerToken = new Map<string, UserInfo | undefined>();
     #remoteJWKSet: ReturnType<typeof createRemoteJWKSet> | undefined;
     #env: Env;
     #discoveryDocument: DiscoveryDocument | undefined;
@@ -66,7 +69,7 @@ export const WithAuth = <Env, TBase extends Constructor<Server<Env>>>(
      * @returns - The credentials for the connection.
      */
     getCredentialsFromConnection(connection: Connection): TokenSet | undefined {
-      return this.#tokenSetPerConnection.get(connection);
+      return tokenSetPerConnection.get(connection.id);
     }
 
     /**
@@ -180,8 +183,8 @@ export const WithAuth = <Env, TBase extends Constructor<Server<Env>>>(
       }
 
       const { access_token } = credentials;
-      if (!forceRefresh && this.#userPerToken.has(access_token)) {
-        return this.#userPerToken.get(access_token);
+      if (!forceRefresh && userPerToken.has(access_token)) {
+        return userPerToken.get(access_token);
       }
 
       const { userinfo_endpoint } = await this.#getDiscoveryDocument();
@@ -200,7 +203,7 @@ export const WithAuth = <Env, TBase extends Constructor<Server<Env>>>(
         );
       }
       const userInfo = (await userInfoResp.json()) as UserInfo;
-      this.#userPerToken.set(access_token, userInfo);
+      userPerToken.set(access_token, userInfo);
       return userInfo;
     }
 
@@ -233,7 +236,7 @@ export const WithAuth = <Env, TBase extends Constructor<Server<Env>>>(
     override async onConnect(connection: Connection, ctx: ConnectionContext) {
       try {
         const tokenSet = await this.#validateTokenFromRequest(ctx.request);
-        this.#tokenSetPerConnection.set(connection, tokenSet);
+        tokenSetPerConnection.set(connection.id, tokenSet);
         return this.#asyncTokenStorage.run(tokenSet, async () => {
           await this.onAuthenticatedConnect(connection, ctx);
           if (connection.readyState === connection.OPEN) {
@@ -261,7 +264,7 @@ export const WithAuth = <Env, TBase extends Constructor<Server<Env>>>(
       connection: Connection,
       message: WSMessage,
     ): void | Promise<void> {
-      const credentials = this.#tokenSetPerConnection.get(connection);
+      const credentials = tokenSetPerConnection.get(connection.id);
 
       if (!credentials) {
         if (authRequired) {
@@ -317,11 +320,11 @@ export const WithAuth = <Env, TBase extends Constructor<Server<Env>>>(
       reason: string,
       wasClean: boolean,
     ): void | Promise<void> {
-      const tokenSet = this.#tokenSetPerConnection.get(connection);
+      const tokenSet = tokenSetPerConnection.get(connection.id);
       if (tokenSet) {
-        this.#userPerToken.delete(tokenSet.access_token);
+        userPerToken.delete(tokenSet.access_token);
       }
-      this.#tokenSetPerConnection.delete(connection);
+      tokenSetPerConnection.delete(connection.id);
       super.onClose(connection, code, reason, wasClean);
     }
   };
