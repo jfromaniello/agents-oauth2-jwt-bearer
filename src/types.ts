@@ -1,5 +1,3 @@
-import { JWTVerifyOptions } from "jose";
-
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export interface UserInfo {
   readonly sub: string;
@@ -96,11 +94,6 @@ export type DiscoveryDocument = {
 };
 
 export type WithAuthParams = {
-  /**
-   * The options to pass to the JWT verification.
-   */
-  verify?: JWTVerifyOptions;
-
   /**
    * Whether to require authentication for all requests.
    * If set to false, unauthenticated requests will be allowed.

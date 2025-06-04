@@ -1,6 +1,6 @@
 # Agents OAuth2 JWT Bearer
 
-A PartyServer mixin for adding OAuth 2.0 JWT Bearer Token authentication to your PartyServer applications.
+A PartyServer mixin for adding OAuth 2.0 JWT Bearer Token authentication to your PartyServer applications, with Auth0 support.
 
 It should work with:
 
@@ -9,7 +9,7 @@ It should work with:
 
 ## Overview
 
-This package provides a mixin that adds authentication functionality to a PartyServer server using [JSON Web Token (JWT) Profile for OAuth 2.0 Access Tokens](https://datatracker.ietf.org/doc/html/rfc9068). It allows you to secure your PartyServer applications by validating access tokens from requests and connections.
+This package provides a mixin that adds authentication functionality to a PartyServer server using [JSON Web Token (JWT) Profile for OAuth 2.0 Access Tokens](https://datatracker.ietf.org/doc/html/rfc9068). It allows you to secure your PartyServer applications by validating access tokens from requests and connections, with built-in support for Auth0.
 
 ## Installation
 
@@ -31,8 +31,8 @@ import { WithAuth } from "agents-oauth2-jwt-bearer";
 
 // Define your environment type
 type MyEnv = {
-  OIDC_ISSUER_URL: string;
-  OIDC_AUDIENCE: string;
+  AUTH0_DOMAIN: string;
+  AUTH0_AUDIENCE: string;
   // ... other environment variables
 };
 
@@ -41,12 +41,12 @@ class MyAuthenticatedServer extends WithAuth(Server<MyEnv>) {
   // Your server implementation
 }
 
-// Pass verify options as parameters to the mixin function
+// Pass options as parameters to the mixin function
 class MyAuthenticatedServer extends WithAuth(Server, {
-  // Optional: specify the audience and issuer, etc
-  verify: verifyOptions,
-  // Optional: allow unauthenticated requests and connections
+  // Optional: make authentication optional
   authRequired: false,
+  // Optional: provide a debug function
+  debug: (message, ctx) => console.log(message, ctx),
 }) {
   // Your server implementation
 }
@@ -54,8 +54,8 @@ class MyAuthenticatedServer extends WithAuth(Server, {
 // Start the server
 const server = new MyAuthenticatedServer({
   env: {
-    OIDC_ISSUER_URL: "https://your-identity-provider.com",
-    OIDC_AUDIENCE: "your-api-audience",
+    AUTH0_DOMAIN: "your-tenant.auth0.com",
+    AUTH0_AUDIENCE: "your-api-audience",
     // ... other environment variables
   },
 });
@@ -73,7 +73,7 @@ class MyAuthenticatedServer extends WithAuth(Server<MyEnv>) {
   onAuthenticatedRequest(req: Request) {
     // Get the JWT claims from the token
     const claims = this.getClaims();
-    if (claims.sub !== expectedUserId) {
+    if (claims?.sub !== expectedUserId) {
       return new Response("You are not welcome", { status: 401 });
     }
   }
@@ -86,7 +86,19 @@ class MyAuthenticatedServer extends WithAuth(Server<MyEnv>) {
     const claims = this.getClaims();
 
     // Now you can use the claims to identify the user
-    console.log(`User ID: ${claims.sub}`);
+    console.log(`User ID: ${claims?.sub}`);
+
+    // You can also require specific scopes for certain operations
+    try {
+      await this.requireAuth({ scopes: "read:data" });
+      // The user has the required scope
+    } catch (error) {
+      if (error instanceof UnauthorizedError) {
+        return error.toResponse();
+      }
+      // Handle other errors
+      return new Response("Unknown error", { status: 500 });
+    }
 
     // Continue processing the request...
     return new Response("Hello authenticated user!");
@@ -109,7 +121,19 @@ class MyAuthenticatedServer extends WithAuth(Server<MyEnv>) {
     const claims = this.getClaims();
 
     // Use the claims in your connection handling logic
-    console.log(`Connected user: ${claims.sub}`);
+    console.log(`Connected user: ${claims?.sub}`);
+
+    // You can also require specific scopes for certain operations
+    try {
+      await this.requireAuth({ scopes: ["read:data", "write:data"] });
+      // The user has both required scopes
+    } catch (error) {
+      if (error instanceof UnauthorizedError) {
+        return error.terminateConnection(connection);
+      }
+      // Handle other errors
+      throw error;
+    }
   }
 
   onMessage(connection: Connection, message: unknown) {
@@ -120,7 +144,7 @@ class MyAuthenticatedServer extends WithAuth(Server<MyEnv>) {
     const claims = this.getClaims();
 
     // Use the claims in your message handling logic
-    console.log(`Message from user: ${claims.sub}`);
+    console.log(`Message from user: ${claims?.sub}`);
 
     // Process the message...
   }
@@ -132,8 +156,8 @@ class MyAuthenticatedServer extends WithAuth(Server<MyEnv>) {
 1. When a client makes a request or connection:
 
    - The mixin extracts the bearer token from the Authorization header or the `access_token` query parameter
-   - It validates the token using the JWKS from your identity provider
-   - It verifies the token's issuer and audience
+   - It validates the token using Auth0's token verification API
+   - It verifies the token's issuer and audience claims
 
 2. If validation succeeds:
 
@@ -148,18 +172,32 @@ class MyAuthenticatedServer extends WithAuth(Server<MyEnv>) {
 
 The `WithAuth` mixin requires the following environment variables:
 
-- `OIDC_ISSUER_URL`: The URL of the OpenID Connect issuer (your identity provider)
-- `OIDC_AUDIENCE`: The audience for the JWT, typically your API identifier
+- `AUTH0_DOMAIN`: Your Auth0 tenant domain (e.g., "your-tenant.auth0.com")
+- `AUTH0_AUDIENCE`: The audience for the JWT, typically your API identifier
+
+You can also configure the mixin with options:
+
+```typescript
+WithAuth(Server, {
+  // Make authentication optional (default: true)
+  authRequired: false,
+  // Optional debug function
+  debug: (message, context) => console.log(message, context),
+});
+```
 
 ## API Reference
 
-### `WithAuth(BaseClass)`
+### `WithAuth(BaseClass, options?)`
 
 A mixin factory function that adds authentication functionality to a PartyServer class.
 
 **Parameters:**
 
 - `BaseClass`: The base class to extend from. This should be a class that extends `Server`.
+- `options`: Optional configuration object:
+  - `authRequired`: Boolean indicating whether authentication is required (default: true)
+  - `debug`: Function for debugging (default: noop)
 
 **Returns:**
 
@@ -167,7 +205,7 @@ A mixin factory function that adds authentication functionality to a PartyServer
 
 ### Methods
 
-#### `getCredentials(): TokenSet | void`
+#### `getCredentials(): TokenSet | undefined`
 
 Gets the token set associated with the current context.
 
@@ -178,13 +216,32 @@ Gets the token set associated with the current context.
   - `id_token`: Optional ID token (from `x-id-token` header)
   - `refresh_token`: Optional refresh token (from `x-refresh-token` header)
 
-#### `getClaims(reqOrConnection: Request | Connection): Record<string, unknown>`
+#### `getClaims(): Token | undefined`
 
 Gets the decoded JWT claims from the access token.
 
 **Returns:**
 
-- An object containing the JWT claims
+- An object containing the JWT claims or undefined if no token is available
+
+#### `requireAuth(options?: { scopes?: string | string[] }): Promise<TokenSet>`
+
+Requires authentication with optional scope checking.
+
+**Parameters:**
+
+- `options`: Optional configuration object:
+  - `scopes`: String or array of strings representing required scopes
+
+**Returns:**
+
+- A promise that resolves to the token set if authentication is successful
+
+**Throws:**
+
+- `UnauthorizedError`: If no valid token is present
+- `InvalidTokenError`: If the token is invalid
+- `InsufficientScopeError`: If the token doesn't have the required scopes
 
 ## Token Format
 
@@ -292,6 +349,7 @@ The `WithOwnership` mixin is designed to work with Cloudflare DurableObjects for
 
 ## References
 
+- This project uses the Auth0 API Client to verify access tokens: [@auth0/auth0-api-js](https://github.com/auth0/auth0-api-js)
 - This project is similar to other Auth0 middlewares like [node-oauth2-jwt-bearer](https://github.com/auth0/node-oauth2-jwt-bearer).
 - [Authentication on PartyKit](https://docs.partykit.io/guides/authentication/).
 
