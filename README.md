@@ -14,11 +14,11 @@ This package provides a mixin that adds authentication functionality to a PartyS
 ## Installation
 
 ```bash
-npm install agents-oauth2-jwt-bearer
+npm install @auth0/auth0-cloudflare-agent-api
 # or
-yarn add agents-oauth2-jwt-bearer
+yarn add @auth0/auth0-cloudflare-agent-api
 # or
-pnpm add agents-oauth2-jwt-bearer
+pnpm add @auth0/auth0-cloudflare-agent-api
 ```
 
 ## Usage
@@ -27,7 +27,7 @@ pnpm add agents-oauth2-jwt-bearer
 
 ```typescript
 import { Server } from "partyserver";
-import { WithAuth } from "agents-oauth2-jwt-bearer";
+import { WithAuth } from "@auth0/auth0-cloudflare-agent-api";
 
 // Define your environment type
 type MyEnv = {
